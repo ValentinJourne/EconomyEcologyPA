@@ -1,0 +1,19 @@
+#load my libraries
+library(tidyverse)
+library(cowplot)
+library(ggpointdensity)
+theme_set(theme_cowplot())
+library(directlabels)
+library(ggthemes)
+library(GGally)
+
+#for analysis 
+library(piecewiseSEM)
+library(lavaan)
+library(tidySEM)
+library(brms)
+library(gjam)
+library(corrplot)
+library(betareg)
+library(glmmTMB)
+library(DHARMa)
