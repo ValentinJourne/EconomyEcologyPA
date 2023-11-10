@@ -33,7 +33,10 @@ pa_terrest_gps  <-  pa_terrest %>%
   mutate(sqrtvalue = sqrt(Value),
          lgdp = log(gdp_per_capita),
          lpopulationdensity= log(population_density),
-         lmedianage = log(median_age)) %>% 
+         lmedianage = log(median_age),
+         scale.gdp_per_capita = scale(gdp_per_capita),
+         scale.population_density = scale(population_density),
+         scale.median_age = scale(median_age)) %>% 
   rename(populationdensity = population_density,
          gdppercapita = gdp_per_capita,
          medianage = median_age) %>% 
@@ -63,12 +66,37 @@ cormat  = cor(df)
 corrplot(cormat, method = 'circle') # colorful number
 
 #plotPairs(df, save = F, ncol = 2.6 , nrow = 3.6, log10SCALE = F)
-#small beta regression 
+#small beta regression - full model 
 betamod = glmmTMB(beta.analy.01 ~ risktaking + patience +  trust + altruism + negrecip + gdppercapita + populationdensity + medianage, data = pa_terrest_gps, family=beta_family(link="logit"))
 summary(betamod)
 #small model evarulation
-simulationOutput <- simulateResiduals(fittedModel = betamod, plot = T)
+simulationOutput <- simulateResiduals(fittedModel = betamod, plot = T) #model looks ok 
+#now do bootstrap to know how much variation we got in regression coefficient 
+#take some time - > 30 min 
+#see here for more details https://easystats.github.io/parameters/
+#out1 = parameters::bootstrap_model(betamod, iterations = 1000)
 
+
+#do some dredge model selection - to see if I missed an much better model, see variation in parameters etc 
+#here is the part bellow 
+oop <- 
+  options(na.action = "na.fail")
+#TAKE SOME TIME 
+dd <- dredge(betamod)
+subset(dd, delta < 4)
+#models with delta.aicc < 4
+summary(model.avg(dd, subset = delta < 4))
+
+#test with brms
+#need to scale covariates, too much differences, gdp, popdens, etc
+# betamod.brms<- brm(beta.analy.01 ~ risktaking + patience +  
+#                      trust + altruism + negrecip + 
+#                      scale.gdp_per_capita + scale.population_density + scale.median_age, data = pa_terrest_gps,
+#                    family = Beta(),backend = "cmdstanr",
+#                    cores = 4, seed = 1234,
+#                    chains = 4, iter = 6000, warmup = 1000)
+# summary(betamod.brms)
+# broom.mixed::tidy(betamod.brms, effects = "fixed")
 
 ###########################
 #Joint model 
@@ -100,6 +128,10 @@ gjamPlot(outgjam1)
 summary(outgjam1)
 #summary of standardized coeffciient - what we want 
 outgjam1$parameters$betaStandXWTable
+#to check models fit (DIC, r2, etc )
+outgjam1$fit
+#plot coefficient of the joint model 
+plotGJAMinit(outputGJAM = outgjam1)
 
 #now we can do the conditioning - to get the direct effect of trait on Protected area
 condgjam <- gjamConditionalParameters( outgjam1, conditionOn = c('risktaking', "patience", "trust", "altruism") , nsim = 10000)
@@ -121,46 +153,3 @@ ggplot(condP1V2, aes( y = covariates)) +
   geom_point(aes(x = Estimate, col = sigSens, fill = sigSens), size = 5, shape = 108)+
   geom_vline(aes(xintercept = 0), col = "darkred",linetype = "dashed", size = 0.5)+
   theme(legend.position = "none")
-
-# formula_sem <- '
-# patience ~ gdp_per_capita
-# Value ~ patience
-# '
-# 
-# sem_run <- sem(formula_sem, data = pa_terrest_gps)
-# graph_sem(model = sem_run)
-# get_edges(sem_run)
-# summary(sem_run)
-
-
-#missingval  = pa_terrest_gps %>% filter(is.na(Value))
-#COUmissin = c(missingval$COU)
-#percentage 
-#Valuemissin = c(0, 4.6, 4.6, 0, 0, )
-#Yearmissin = c(2013, 2020, 2014, 2013, 2013, )
-
-# fit3way <- brm(count ~ zAge * zBase * Trt, data = epilepsy,  backend = "cmdstanr")
-# conditions <- make_conditions(fit3way, "zAge")
-# conditional_effects(fit3way, "zBase:Trt", conditions = conditions)
-# conditional_effects(fit3way, "zBase:Trt")
-# 
-# response <- bf(Value ~ risktaking + patience +  trust + altruism + gdplog + popden + medAge)
-# bfz <- bf(risktaking ~  gdplog + popden + medAge)
-# bfz1 <- bf(patience ~  gdplog + popden + medAge )
-# bfz2 <- bf(trust ~ gdplog + popden + medAge)
-# bfz3 <- bf(altruism ~ gdplog + popden + medAge )
-# 
-# 
-# path1 <- bf(CV ~ pollibi+dispersalbi+ sMAT*sMAP ) #+ (1 | genusNewFactor)
-# path2 <-  bf(pollibi ~ sMAT*sMAP, family = "binomial")
-# path3<- bf(dispersalbi ~ sMAT*sMAP, family = "binomial")
-# 
-# mod.po.di.cl <- brm(
-#   path1 + path2 + path3 + 
-#     set_rescor(FALSE), #set_rescor(FALSE) ensures that no residual correlation between y and z is estimated since we already have z as predictor for y
-#   warmup = 1000, 
-#   iter = 8000,  backend = "cmdstanr", 
-#   data=MastreeSpeciesGJAMmissing,
-#   sample_prior = 'yes',
-#   cores=detectCores()-2, chains = 4)
-# 
