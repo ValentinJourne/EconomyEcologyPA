@@ -112,6 +112,8 @@ PAterrestre %>%
   xlab('pa marine')
   
 
+
+
 ##################################################################
 #4 - format data of behavior traits
 load("./data/covid_pays_wvs60.RData")
