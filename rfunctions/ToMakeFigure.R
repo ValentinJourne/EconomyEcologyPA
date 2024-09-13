@@ -1,7 +1,7 @@
 #plot output from gjam 
-plotGJAMinit <- function(outputGJAM = outputGJAM){
+plotGJAMinit <- function(gjammodel = gjammodel){
   
-  formatFig <- outputGJAM$parameters$betaStandXWTable %>% 
+  formatFig <- gjammodel$parameters$betaStandXWTable %>% 
     tibble::rownames_to_column("variable") %>% 
     separate(variable , into=c("response", "covariates"), 
              sep="_") %>% 
@@ -14,15 +14,12 @@ plotGJAMinit <- function(outputGJAM = outputGJAM){
                             ifelse(CI_025 < 0 & CI_975 < 0, "#FF7F00",
                                    ifelse(CI_100 < 0 & CI_900 < 0, "#FDBF6F",
                                           ifelse(CI_100 > 0 & CI_900 > 0, "#A6CEE3", "grey70")))))
-    
+  
   colors <- distinct(formatFig, signV2, colors)
   pal <- colors$colors
   names(pal) <- colors$signV2
   
-
-  
-  coefPlot <- ggplot(formatFig, aes( x = covariates)) + #Estimate initinaly figureGJAMv1
-    #ggh4x::facet_grid2(.~ response, scales = "free", independent = "none")+ 
+  coefPlot <- ggplot(formatFig, aes( x = covariates)) + 
     facet_grid(.~ response)+ 
     geom_boxplot(aes(x = covariates, ymin = CI_025, lower = CI_100, group = covariates, middle = Estimate, 
                      upper = CI_900, ymax = CI_975, fill = signV2), stat = "identity",
@@ -30,8 +27,8 @@ plotGJAMinit <- function(outputGJAM = outputGJAM){
                  alpha = .9 , width = .5, col = "grey30", size = 0.3)+
     coord_flip()+
     geom_hline(aes(yintercept = 0), col = "black",linetype = "dashed", size = 0.5)+
-    scale_color_manual(values = colall, name = "")+
-    scale_fill_manual(values = colall, name = "")+
+    scale_color_manual(values = pal, name = "")+
+    scale_fill_manual(values = pal, name = "")+
     xlab("")+
     ylab("Coefficient value")+
     theme(legend.position = "none",
