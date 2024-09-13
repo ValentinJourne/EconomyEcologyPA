@@ -280,7 +280,7 @@ PAgps.sub <- PAgps %>% ungroup() %>% dplyr::select('isocode', "human_development
                                                    'PercentageUrban',
                                                    'VoiceAccount', "PoliticalStability" ,"GovEffectiveness","RegulatoryQuality","RuleOfLaw","ControlCorruption"
 ) %>% mutate(gdp_per_capita = scale(log10(gdp_per_capita), center = TRUE, scale = TRUE),
-             human_development_index = scale(log10(human_development_index), center = T, scale = T),
+             human_development_index = scale((human_development_index), center = T, scale = T),
              PercentageUrban = scale(PercentageUrban, center = T, scale = T),
              population_density = scale(log10(population_density), center = T, scale = T)) %>% 
   as.data.frame #%>% dplyr::select(-Species)   #CV, ACF1, 
@@ -299,20 +299,23 @@ PAgps.PCA <- cbind(PAgps, PCAnew$li[,1], PCAnew$li[,2]) %>%
   rename(PCA1 = 21, PCA2 = 22) %>% 
   mutate(beta.PA = percentageByCountry_sum/100,
          logit.PA = car::logit(beta.PA))%>%
-  mutate(gdp_per_capita = scale(log10(gdp_per_capita), center = TRUE, scale = TRUE),
-         negrecip = scale(negrecip, center = T, scale = T),
-         altruism = scale(altruism, center = T, scale = T),
-         trust = scale(trust, center = T, scale = T),
-         patience = scale(patience, center = T, scale = T),
-         posrecip = scale(posrecip, center = T, scale = T),
-         risktaking = scale(risktaking, center = T, scale = T)) #%>% 
+  mutate(gdp_per_capita = scale(log10(gdp_per_capita), center = TRUE, scale = TRUE))
+         #negrecip = scale(negrecip, center = T, scale = T),
+         #altruism = scale(altruism, center = T, scale = T),
+         #trust = scale(trust, center = T, scale = T),
+         #patience = scale(patience, center = T, scale = T),
+         #posrecip = scale(posrecip, center = T, scale = T),
+         #risktaking = scale(risktaking, center = T, scale = T)) #%>% 
   #left_join(HDI %>% dplyr::select(ISOCODE, HDIvalue) %>% rename(isocode = ISOCODE))
 
 #model TMB 
 library(glmmTMB)
 library(brms)
 colnames(PAgps.PCA)
+#update, remove posres and negrec
 formula.gps1 = formula(beta.PA~negrecip+altruism+trust+patience+posrecip+risktaking+PCA1+PCA2)
+formula.gps1 = formula(beta.PA~altruism+trust+patience+risktaking+PCA1+PCA2)
+
 # formula.gps1.scale = formula(beta.PA~negrecip.scale+
 #                                altruism.scale+
 #                                trust.scale+
@@ -361,10 +364,18 @@ summary(cv_results) #average pseudor2 = 0.2 median = .15
 
 
 formula.gps.traits = formula(beta.PA~negrecip+altruism+trust+patience+posrecip+risktaking)
+formula.gps.traits = formula(beta.PA~altruism+trust+patience+risktaking)
+
 formula.gps.pca = formula(beta.PA~PCA1+PCA2)
+
 formula.gps.gdp = formula(beta.PA~negrecip+altruism+trust+patience+posrecip+risktaking+gdp_per_capita)
+formula.gps.gdp = formula(beta.PA~altruism+trust+patience+risktaking+gdp_per_capita)
+
 formula.gdp = formula(beta.PA~gdp_per_capita)
+
 formula.gps.hdi = formula(beta.PA~negrecip+altruism+trust+patience+posrecip+risktaking+human_development_index)
+formula.gps.hdi = formula(beta.PA~altruism+trust+patience+risktaking+human_development_index)
+
 formula.hdi = formula(beta.PA~human_development_index)
 
 m.gps.traits <- glmmTMB(formula.gps.traits, data = PAgps.PCA, family=beta_family())
@@ -439,6 +450,10 @@ cor(qlogis(PAgps.PCA$beta.PA), predict(m.gps, type = "link"))^2
 1- as.vector(logLik(m.null)/logLik(m.gps.gdp))
 1- as.vector(logLik(m.null)/logLik(m.gdp))
 
+cor((PAgps.PCA$beta.PA), predict(m.gps, type = "response"))^2 
+cor((PAgps.PCA$beta.PA), predict(m.gps.traits, type = "response"))^2 
+cor((PAgps.PCA$beta.PA), predict(m.gps.pca, type = "response"))^2 
+
 #now check with surrogate r2 
 #https://bpspsychub.onlinelibrary.wiley.com/doi/10.1111/bmsp.12289
 #library(SurrogateRsq) #useful only for ranking - for me to keep in mind 
@@ -498,7 +513,7 @@ mutate(significnace = ifelse(p.value < .05, 'y', 'ns')) %>%
                                             'GDP')))) %>% 
   drop_na(term) %>% 
   mutate(tt = dist_student_t(df = df.residual(m.gps), mu = estimate, sigma = std.error)) %>% 
-ggplot(aes(y = reorder(term, estimate)))+
+ggplot(aes(y = term))+#reorder(term, estimate)
   geom_vline(xintercept=0, linetype="dashed")+
   #geom_pointinterval(aes(xdist = tt))
   stat_halfeye(
@@ -508,7 +523,8 @@ ggplot(aes(y = reorder(term, estimate)))+
   #stat_gradientinterval(aes(xdist = dist_student_t(df = df.residual(m.gps), mu = estimate, sigma = std.error)))+
   xlab('Coefficient value')+
   theme(legend.position = 'none')+
-  ylab('')
+  ylab('')#+
+  #annotate("text", x = 1, y = 1, label = "n=75", size = 5)
 plotv2
 
 ################################################################
@@ -522,7 +538,7 @@ evws <- covid_evws_C %>%
   rename(country = Country) %>% 
   select("isocode","continent","country","population_density","human_development_index",
          "gdp_per_capita", 
-         "wvs_altruism" ,"wvs_trust_global", 'wvs_patience') 
+         "wvs_altruism" ,"wvs_trust_int", 'wvs_patience') #wvs_trust_global
 
 #format with PA and other datasets
 PAevws = PAterrestre %>% 
@@ -538,7 +554,7 @@ PAevws.sub <- PAevws %>%
                 'PercentageUrban',
                 'VoiceAccount', "PoliticalStability" ,"GovEffectiveness","RegulatoryQuality","RuleOfLaw","ControlCorruption"
   ) %>% mutate(gdp_per_capita = scale(log10(gdp_per_capita), center = TRUE, scale = TRUE),
-               human_development_index = scale(log10(human_development_index), center = T, scale = T),
+               human_development_index = scale((human_development_index), center = T, scale = T),
                PercentageUrban = scale(PercentageUrban, center = T, scale = T),
                population_density = scale(log10(population_density), center = T, scale = T))%>% 
   as.data.frame 
@@ -570,12 +586,13 @@ PAevws.PCA <- cbind(PAevws, PCA.evws$li[,1], PCA.evws$li[,2]) %>%
          PCA2 = -PCA2) %>% 
   mutate(beta.PA = percentageByCountry_sum/100,
          logit.PA = car::logit(beta.PA)) %>% 
-  mutate(gdp_per_capita = scale(log10(gdp_per_capita), center = TRUE, scale = TRUE),
-         wvs_altruism = scale(wvs_altruism, center = T, scale = T),
-         wvs_trust_global = scale(wvs_trust_global, center = T, scale = T),
-         wvs_patience = scale(wvs_patience, center = T, scale = T))
+  mutate(gdp_per_capita = scale(log10(gdp_per_capita), center = TRUE, scale = TRUE))#,
+         #wvs_altruism = scale(wvs_altruism, center = T, scale = T),
+         #wvs_trust_global = scale(wvs_trust_global, center = T, scale = T),
+         #wvs_patience = scale(wvs_patience, center = T, scale = T))
 
-formula.evws1 = formula(beta.PA~wvs_altruism+wvs_trust_global+wvs_patience+PCA1+PCA2)
+#wvs_trust_global
+formula.evws1 = formula(beta.PA~wvs_altruism+wvs_trust_int+wvs_patience+PCA1+PCA2)
 m.evws <- glmmTMB(formula.evws1, data = PAevws.PCA, family=beta_family())
 summary(m.evws)
 simulation.m.evws <- simulateResiduals(fittedModel = m.evws, quantreg=T, n = 500)
@@ -584,13 +601,29 @@ coef.evws <-broom.mixed::tidy(m.evws,conf.int =TRUE)
 dw.evws <-dotwhisker::dwplot(coef.evws, by_2sd = T)
 #compute the pseudo r2 for beta rege 
 cor(qlogis(PAevws.PCA$beta.PA), predict(m.evws, type = "link"))^2 
+#alternative model comparison
+
+m.evws.hdi <- glmmTMB(beta.PA~human_development_index, data = PAevws.PCA, family=beta_family())
+m.evws.gdp <- glmmTMB(beta.PA~gdp_per_capita, data = PAevws.PCA, family=beta_family())
+m.evws.traits <- glmmTMB(beta.PA~wvs_altruism+wvs_trust_int+wvs_patience, data = PAevws.PCA, family=beta_family())
+m.evws.pca <- glmmTMB(beta.PA~PCA1+PCA2, data = PAevws.PCA, family=beta_family())
+
+cor(qlogis(PAevws.PCA$beta.PA), predict(m.evws.hdi, type = "link"))^2 
+cor(qlogis(PAevws.PCA$beta.PA), predict(m.evws.gdp, type = "link"))^2 
+cor(qlogis(PAevws.PCA$beta.PA), predict(m.evws.traits, type = "link"))^2 
+cor(qlogis(PAevws.PCA$beta.PA), predict(m.evws.pca, type = "link"))^2 
+lmtest::lrtest(m.evws.traits, m.evws.pca, m.evws, m.evws.gdp, m.evws.hdi)
+
+
+
+
 dw.evwsup = dw.evws$data %>% 
   mutate(significnace = ifelse(p.value < .05, 'y', 'ns')) %>% 
   mutate( term = dplyr::recode(term, "wvs_altruism" = "Altruism" ,  
-                               "wvs_trust_global" = "Trust (global)",
+                               "wvs_trust_int" = "Trust",
                                "wvs_patience" = "Patience")) %>% 
   mutate(term = factor(term, levels = rev(c("Altruism",
-                                            "Trust (global)", 
+                                            "Trust", 
                                             "Patience",
                                             'PCA1',
                                             'PCA2')))) %>% 
@@ -609,16 +642,16 @@ plotv2evws = m.evws %>%
   tidy() %>%
   mutate(significnace = ifelse(p.value < .05, 'y', 'ns')) %>% 
   mutate( term = dplyr::recode(term, "wvs_altruism" = "Altruism" ,  
-                               "wvs_trust_global" = "Trust (global)",
+                               "wvs_trust_int" = "Trust",
                                "wvs_patience" = "Patience")) %>% 
   mutate(term = factor(term, levels = rev(c("Altruism",
-                                            "Trust (global)", 
+                                            "Trust", 
                                             "Patience",
                                             'PCA1',
                                             'PCA2')))) %>% 
   drop_na(term) %>% 
   mutate(tt = dist_student_t(df = df.residual(m.evws), mu = estimate, sigma = std.error)) %>% 
-  ggplot(aes(y = reorder(term, estimate)))+
+  ggplot(aes(y = term))+
   geom_vline(xintercept=0, linetype="dashed")+
   #geom_pointinterval(aes(xdist = tt))
   stat_halfeye(
@@ -626,7 +659,8 @@ plotv2evws = m.evws %>%
   )+
   xlab('Coefficient value')+
   theme(legend.position = 'none')+
-  ylab('')
+  ylab('')#+
+  #annotate("text", x = .16, y = 1, label = "n=75", size = 5)
 
 
 library(patchwork)
@@ -639,7 +673,7 @@ mainresult_regression = plotv2+plotv2evws+plot_annotation(tag_levels = 'a') &
 mainresult_regression
 
 cowplot::save_plot("main.res.regression.png",mainresult_regression, 
-                   ncol = 1.5, nrow = 1.1, dpi = 300)
+                   ncol = 1.5, nrow = 1.2, dpi = 300)
 
 #BONUS 
 #library(relaimpo)
@@ -750,9 +784,10 @@ if(bootstrap == T){
 m.gps.dre <- glmmTMB(formula.gps1, data = PAgps.PCA, family=beta_family(), na.action = "na.fail")
 dd.gps = dredge(m.gps.dre)
 summary(model.avg(dd.gps))
-inf_mod <- subset(dd.gps, delta < 3)
+inf_mod <- subset(dd.gps, delta < 2)
 #Calculate average parameter estimate across all informative models
 avg_mod <- model.avg(inf_mod)
+summary(avg_mod)
 #Extract coefficients
 coef <- coefficients(avg_mod, full = TRUE)
 ci1 <- confint(avg_mod, full=TRUE)
@@ -1099,9 +1134,9 @@ cowplot::save_plot("pcasum.plot.png",pcasummary,
                    ncol = 2.6, nrow = 1.6, dpi = 300)
 
 #now coefficient without pca
-formula.gps.no = formula(beta.PA~negrecip+altruism+trust+patience+posrecip+risktaking)
+formula.gps.no = formula(beta.PA~altruism+trust+patience+risktaking)
 m.gps.no <- glmmTMB(formula.gps.no, data = PAgps.PCA, family=beta_family())
-formula.evws.no = formula(beta.PA~wvs_altruism+wvs_trust_global+wvs_patience)
+formula.evws.no = formula(beta.PA~wvs_altruism+wvs_trust_int+wvs_patience)
 m.evws.no <- glmmTMB(formula.evws.no, data = PAevws.PCA, family=beta_family())
 summary(m.evws.no)
 summary(m.gps.no)
@@ -1150,10 +1185,10 @@ plotv2evws.NO = m.evws.no %>%
   tidy() %>%
   mutate(significnace = ifelse(p.value < .05, 'y', 'ns')) %>% 
   mutate( term = dplyr::recode(term, "wvs_altruism" = "Altruism" ,  
-                               "wvs_trust_global" = "Trust (global)",
+                               "wvs_trust_int" = "Trust",
                                "wvs_patience" = "Patience")) %>% 
   mutate(term = factor(term, levels = rev(c("Altruism",
-                                            "Trust (global)", 
+                                            "Trust", 
                                             "Patience",
                                             'PCA1',
                                             'PCA2')))) %>% 
