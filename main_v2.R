@@ -72,6 +72,46 @@ summarypercentagearea_versionNatRegInter = getPercentagePA(sfuse = F,
                                         country_list,
                                         methodrobust = F )
   
+
+#data from databank.worldbank.org 
+pa_terrest <- read_csv("./data/PROTECTED_AREAS_terrestrial.csv") %>% 
+  dplyr::select(COU, Country, Value, YEA) %>% 
+  group_by(COU, Country) %>% 
+  slice(which.max(YEA)) %>% 
+  mutate(Value = Value) %>% 
+  dplyr::select(COU, Value)
+
+pa_water <- read_csv("./data/API_ER.MRN.PTMR.ZS_DS2_en_csv_v2_3446248.csv", skip = 3) %>% 
+  dplyr::select(1,2,`2020`) %>% 
+  rename(Country = 1, isocode = 2, pawater = 3)
+
+
+library(ggpmisc)
+
+PAterrestre %>% 
+  mutate(perus = percentageByCountry_sum) %>% 
+  left_join(pa_terrest %>% rename(isocode = COU)) %>% 
+  ggplot(aes(y = perus,
+             x = Value))+
+  geom_abline(slope = 1, intercept = 0, col = 'red')+
+  geom_point(size = 2, alpha = .6, shape = 21, col = 'black', fill = 'black', stroke = .8)+
+  stat_poly_line(size =.5) +
+  stat_poly_eq()+
+  ylab('our pa value ')
+  
+PAterrestre %>% 
+  mutate(perus = percentageByCountry_sum) %>% 
+  left_join(pa_water) %>% 
+  ggplot(aes(y = perus,
+             x = pawater))+
+  geom_abline(slope = 1, intercept = 0, col = 'red')+
+  geom_point(size = 2, alpha = .6, shape = 21, col = 'black', fill = 'black', stroke = .8)+
+  stat_poly_line(size =.5) +
+  stat_poly_eq()+
+  ylab('pa terrestrial')+
+  xlab('pa marine')
+  
+
 ##################################################################
 #4 - format data of behavior traits
 load("./data/covid_pays_wvs60.RData")
