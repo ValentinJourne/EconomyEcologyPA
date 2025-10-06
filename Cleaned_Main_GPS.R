@@ -11,6 +11,12 @@ library(sf)
 library(patchwork)
 library(ggpmisc)
 
+library(raster)
+library(sf)
+library(dplyr)
+library(exactextractr) # For raster extraction by polygons
+library(rasterVis)
+library(terra)
 ################################################################
 ################################################################
 ################FUNCTION LOADING################################
@@ -100,157 +106,8 @@ summarypercentagearea_versionNatRegInter %>%
   geom_histogram()
 
 ##################################################################
-#4 - format species richness for each country rarity
-#use IUCN redlist https://www.iucnredlist.org/resources/other-spatial-downloads
-#even if only animals species ...
-library(raster)
-library(sf)
-library(dplyr)
-library(exactextractr) # For raster extraction by polygons
-library(rasterVis)
-library(terra)
-
-rarity_raster.init <- terra::rast(
-  "data/Combined_THR_SR_2023/Combined_THR_SR_2023.tif"
-)
-rarity_raster_wgs84 <- terra::project(rarity_raster.init, "EPSG:4326")
-rarity_raster <- terra::ifel(rarity_raster_wgs84 > 126, NA, rarity_raster_wgs84)
-countries <- ne_countries(returnclass = "sf")
-
-gplot(rarity_raster) +
-  geom_tile(aes(fill = value))
-
-# extracts the raster values within each country's boundaries
-results <- exact_extract(rarity_raster, countries, 'mean', progress = TRUE)
-countries$mean_rarity <- results
-# make raster values into "rarity" or "no rarity", if higher than 0 strictly
-#rarity_binary_raster <- terra::app(rarity_raster, fun = function(x) ifelse(x > 0, 1, NA))
-#this initial idae is shit, because then, all countries would be covered by rare species
-#so then it would be better to determine, how what is the coverage of rare species by using quantile
-#define rarity more strictly by selecting only the top X% most rare species occurrences, for example by selecting only top 5%
-threshold <- quantile(values(rarity_raster), 0.90, na.rm = TRUE)
-rarity_binary_raster <- terra::app(
-  rarity_raster,
-  fun = function(x) ifelse(x > threshold, 1, NA)
-)
-
-
-#pixel count of rare species and for each country
-results_binary <- exact_extract(
-  rarity_binary_raster,
-  countries,
-  'count',
-  progress = TRUE
-)
-
-countries$num_rarity_pixels <- results_binary
-#but now we got this , count total number of pixel (for each country)
-#because the problem we have now, is that big country = more rare species
-total_pixels <- exact_extract(
-  rarity_raster,
-  countries,
-  'count',
-  progress = TRUE
-)
-countries$total_pixels <- total_pixels
-countries$percent_rarity_area <- (countries$num_rarity_pixels /
-  countries$total_pixels) *
-  100
-
-test = countries %>%
-  dplyr::select(
-    name,
-    adm0_a3,
-    mean_rarity,
-    num_rarity_pixels,
-    total_pixels,
-    percent_rarity_area
-  )
-#ok but then it is too high... because wuantile is based from more diverse country, and here for example most countryes look like shit
-
-#alternative methode
-threshold <- quantile(values(rarity_raster), 0.95, na.rm = TRUE)
-
-# Step 2: Create a binary raster (only cells with values above the threshold are considered "rare")
-rarity_binary_raster <- terra::app(
-  rarity_raster,
-  fun = function(x) ifelse(x > threshold, 1, NA)
-)
-#rarity_binary_raster <- app(rarity_raster, fun = function(x) ifelse(x > threshold, x, NA))
-
-# Step 3: Plot to check the areas with rare species
-plot(rarity_binary_raster)
-
-#update to make it at country level
-
-path = "/Users/valentinjourne/Documents/Projets_annexes/PoliticsEcology"
-country_shp <- st_read(paste0(path, "/gadm_410.gpkg"))
-
-vector.country = unique(country_shp$COUNTRY)
-countries <- st_transform(countries, crs(rarity_binary_raster))
-results <- list()
-#same as before except that here Im doing this at country level
-for (i in 1:nrow(countries)) {
-  boundary_data <- country_shp %>% filter(COUNTRY == vector.country[i])
-
-  # repair any geometry issues, dissolve the border, reproject to same
-  # coordinate system as the protected area data, and repair the geometry again
-  sf_use_s2(FALSE)
-
-  boundary_data <-
-    boundary_data %>%
-    sf::st_make_valid() %>%
-    st_set_precision(1000) %>%
-    st_combine() %>%
-    st_union() %>%
-    st_set_precision(1000) %>%
-    sf::st_make_valid() %>%
-    st_transform(st_crs(rarity_binary_raster)) %>%
-    sf::st_make_valid()
-
-  country_vect <- vect(boundary_data)
-  country_crop <- terra::crop(rarity_raster, ext(country_vect))
-  country_rare_raster <- terra::mask(country_crop, country_vect)
-  total_cells <- terra::ncell(country_rare_raster) #cell country
-  shapefil_cells <- sum(!is.na(values(country_rare_raster))) #cell PA
-  #now want to know how many are not NA and >0, because here the probleme is that nb of cell is based on the ext()
-  #so first remove NA
-  #do not know why but eadge have high species richness... but using mean would be OK
-  nb.cell.no.na <- values(country_rare_raster)[
-    !is.na(values(country_rare_raster))
-  ]
-  mean.species.rich = mean(nb.cell.no.na, na.rm = T) #adapted for each country, number of mean threaten species by pixel in pa
-  rare_cells = sum(nb.cell.no.na > mean.species.rich)
-  #so here basically, all cell are rare cell !
-  coverage_percentage <- (rare_cells / shapefil_cells) * 100
-
-  #now for non binary
-  #average species threaten by pixel acros all pixel
-  avg_threatened_species_per_protected_pixel <- mean.species.rich /
-    shapefil_cells
-
-  results[[i]] <- data.frame(
-    country = vector.country[i], # Using country name from the sf object
-    shapefil_cells = shapefil_cells,
-    rare_cells = rare_cells,
-    total_cells = total_cells,
-    coverage_percentage = coverage_percentage,
-    avg_threatened_species_per_protected_pixel = avg_threatened_species_per_protected_pixel
-  )
-}
-
-# For each country, we calculate the percentage of the total area covered by rare species by counting the number of cells where rare species are present
-coverage_df <- do.call(rbind, results)
-plot(
-  log(avg_threatened_species_per_protected_pixel) ~ coverage_percentage,
-  data = coverage_df
-)
-
-##################################################################
 #4 - format data of behavior traits
-load("./data/covid_pays_wvs60.RData")
 load("./data/covid_gps.RData")
-load("./data/covid_evws_80.RData")
 
 
 ##################################################################
@@ -457,7 +314,7 @@ cowplot::save_plot(
 # #sup fig PA annexe
 vectorPAcountry.PAtype = summarypercentagearea_versionNatRegInter %>%
   right_join(
-    gps %>%
+    covid_gps %>%
       dplyr::select(-country) %>%
       rename(country = isocode) %>%
       dplyr::select(country)
@@ -477,7 +334,7 @@ tt.sub = world_sf %>%
   full_join(
     vectorPAcountry.PAtype %>%
       right_join(
-        gps %>%
+        covid_gps %>%
           dplyr::select(-country) %>%
           rename(ISOCODE = isocode) %>%
           dplyr::select(ISOCODE)
@@ -526,7 +383,7 @@ maps.PA.subset = ggplot(
   facet_grid(. ~ DESIG_TYPE)
 
 cowplot::save_plot(
-  "typeOfPAs.png",
+  "figures/typeOfPAs.png",
   maps.PA.subset,
   ncol = 2.5,
   nrow = 1.9,
@@ -972,7 +829,7 @@ plotmaps.v2 = mapsPA +
   plot_annotation(tag_levels = "a")
 
 cowplot::save_plot(
-  "plotmaps.png",
+  "figures/plotmaps.png",
   plotmaps.v2,
   ncol = 2,
   nrow = 1.5,
@@ -1069,6 +926,8 @@ m.gps.1 = glmmTMB(
   #ziformula = ~1,
   family = beta_family()
 )
+
+
 m.pca.1 = glmmTMB(
   ChangePA.scaled ~
     PCA1 +
@@ -1230,7 +1089,7 @@ trends.slope.time = datalist.out.slope %>%
   geom_hline(yintercept = 0, linetype = "dashed")
 
 cowplot::save_plot(
-  "trends.slope.time.png",
+  "figures/trends.slope.time.png",
   trends.slope.time,
   ncol = 2.1,
   nrow = 2,
@@ -1326,7 +1185,7 @@ traits.prediction <- (p_trust) /
 
 
 cowplot::save_plot(
-  "traits.prediction.png",
+  "figures/traits.prediction.png",
   traits.prediction,
   ncol = .9,
   nrow = 5,
@@ -1422,7 +1281,7 @@ traits.prediction.pca.full <- (p_trust_full +
 
 
 cowplot::save_plot(
-  "traits.prediction.full.png",
+  "figures/traits.prediction.full.png",
   traits.prediction.pca.full,
   ncol = 1.8,
   nrow = 1.8,
@@ -1553,7 +1412,7 @@ traits.maps <- (plot.traits.pca$Trust) /
 
 
 cowplot::save_plot(
-  "traits.prediction.subset.png",
+  "figures/traits.prediction.subset.png",
   plot_grid(
     traits.maps,
     traits.prediction,
